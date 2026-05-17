@@ -802,7 +802,7 @@ router.post('/epidemiology/backfill-chosen', async (req, res) => {
   } catch (e) { next(e); }
 });
 
-router.get('/epidemiology/overview', async (req, res) => {
+router.get('/epidemiology/overview', async (req, res, next) => {
   try {
     const { rows } = await db.query(`
       SELECT
