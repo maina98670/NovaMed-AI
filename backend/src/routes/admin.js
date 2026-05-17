@@ -475,8 +475,10 @@ ON CONFLICT (canonical, synonym) DO NOTHING;
    FACILITY CONFIG
 ════════════════════════════════════════════════════════════ */
 router.get('/facility', async (_req, res) => {
-  const { rows } = await db.query(`SELECT * FROM facility_config LIMIT 1`);
-  res.json({ ok: true, facility: rows[0] || null });
+  try {
+    const { rows } = await db.query(`SELECT * FROM facility_config LIMIT 1`);
+    res.json({ ok: true, facility: rows[0] || null });
+  } catch (e) { next(e); }
 });
 
 router.post('/facility', async (req, res) => {
