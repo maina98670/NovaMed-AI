@@ -1,0 +1,51 @@
+# ── Environment & secrets ──────────────────────────────────
+# Render reads these from the dashboard, never commit real values
+.env
+.env.local
+.env.*.local
+
+# ── Node ───────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Build output ───────────────────────────────────────────
+# Render builds these fresh on every deploy
+frontend/dist/
+frontend/build/
+backend/build/
+
+# ── Uploaded files ─────────────────────────────────────────
+# Render filesystem is ephemeral — wiped on every deploy.
+# Move to Cloudinary / S3 / Render Disk for persistence.
+backend/uploads/
+
+# ── Logs ───────────────────────────────────────────────────
+logs/
+*.log
+
+# ── OS noise ───────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Editor / IDE ───────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+
+# ── Testing ────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ── Misc ───────────────────────────────────────────────────
+*.pem
+.cache/

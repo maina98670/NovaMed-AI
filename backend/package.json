@@ -1,0 +1,28 @@
+{
+  "name": "novamed-backend",
+  "version": "1.0.0",
+  "description": "NovaMed AI \u2014 hospital AI backend (Express + PostgreSQL + Gemini)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:init": "node src/db/init.js",
+    "build": "node src/db/init.js",
+    "test": "node --test src/tests/*.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.15.0",
+    "pg": "^8.13.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
