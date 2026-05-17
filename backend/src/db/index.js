@@ -10,6 +10,10 @@ const pool = new Pool({
   password: process.env.PGPASSWORD || 'postgres',
   max: 10,
   idleTimeoutMillis: 30000,
+  // Render Postgres requires SSL in production
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 pool.on('error', (err) => console.error('PG pool error:', err));
