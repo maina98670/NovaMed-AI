@@ -459,4 +459,155 @@ INSERT INTO symptom_synonyms (canonical, synonym) VALUES
   ('hypertension',        'high blood pressure'),
   ('myocardial infarction','mi'),
   ('myocardial infarction','heart attack'),
-  ('diabetes',
+  ('diabetes',            'dm'),
+  ('diabetes',            'sugar disease'),
+  ('urinary tract infection', 'uti'),
+  ('tuberculosis',        'tb'),
+  ('malaria',             'mal'),
+  ('pneumonia',           'pna')
+ON CONFLICT (canonical, synonym) DO NOTHING;
+`,
+  };
+  res.json({ ok: true, templates });
+});
+
+/* ════════════════════════════════════════════════════════════
+   FACILITY CONFIG
+════════════════════════════════════════════════════════════ */
+router.get('/facility', async (_req, res) => {
+  try {
+    const { rows } = await db.query(`SELECT * FROM facility_config LIMIT 1`);
+    res.json({ ok: true, facility: rows[0] || null });
+  } catch (e) { next(e); }
+});
+
+router.post('/facility', async (req, res) => {
+  try {
+    const {
+      facility_name, facility_code, facility_type, address, phone,
+      email, website, county, sub_county, ward, logo_url,
+      sha_contract_number, sha_accreditation_level,
+    } = req.body;
+    const { rows } = await db.query(`
+      INSERT INTO facility_config (
+        facility_name, facility_code, facility_type, address, phone,
+        email, website, county, sub_county, ward, logo_url,
+        sha_contract_number, sha_accreditation_level
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      ON CONFLICT (id) DO UPDATE SET
+        facility_name=$1, facility_code=$2, facility_type=$3, address=$4,
+        phone=$5, email=$6, website=$7, county=$8, sub_county=$9, ward=$10,
+        logo_url=$11, sha_contract_number=$12, sha_accreditation_level=$13
+      RETURNING *
+    `, [
+      facility_name, facility_code, facility_type||'clinic', address||null,
+      phone||null, email||null, website||null, county||null, sub_county||null,
+      ward||null, logo_url||null, sha_contract_number||null, sha_accreditation_level||null,
+    ]);
+    await _audit(req, 'admin.facility.updated', 'facility', rows[0].id, { facility_name });
+    res.json({ ok: true, facility: rows[0] });
+  } catch (e) { next(e); }
+});
+
+/* ════════════════════════════════════════════════════════════
+   SHA TARIFFS
+════════════════════════════════════════════════════════════ */
+router.get('/tariffs', async (_req, res) => {
+  try {
+    const { rows } = await db.query(`SELECT * FROM sha_tariffs ORDER BY category, item_name`);
+    res.json({ ok: true, tariffs: rows });
+  } catch (e) { next(e); }
+});
+
+router.post('/tariffs', async (req, res) => {
+  try {
+    const { item_code, item_name, category, unit_rate, unit, notes } = req.body;
+    if (!item_name?.trim()) return res.status(400).json({ ok: false, error: 'item_name required' });
+    const { rows } = await db.query(
+      `INSERT INTO sha_tariffs (item_code, item_name, category, unit_rate, unit, notes)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [item_code||null, item_name.trim(), category||'general',
+       unit_rate||0, unit||null, notes||null]
+    );
+    res.json({ ok: true, tariff: rows[0] });
+  } catch (e) { next(e); }
+});
+
+router.put('/tariffs/:id', async (req, res) => {
+  try {
+    const { item_code, item_name, category, unit_rate, unit, notes } = req.body;
+    const { rows } = await db.query(
+      `UPDATE sha_tariffs SET item_code=$1, item_name=$2, category=$3,
+        unit_rate=$4, unit=$5, notes=$6 WHERE id=$7 RETURNING *`,
+      [item_code||null, item_name, category||'general',
+       unit_rate||0, unit||null, notes||null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ ok: false, error: 'Not found' });
+    res.json({ ok: true, tariff: rows[0] });
+  } catch (e) { next(e); }
+});
+
+router.delete('/tariffs/:id', async (req, res) => {
+  try {
+    await db.query(`DELETE FROM sha_tariffs WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+/* ════════════════════════════════════════════════════════════
+   EPIDEMIOLOGY
+════════════════════════════════════════════════════════════ */
+router.post('/epidemiology/backfill-chosen', async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT id, diagnoses FROM encounters
+      WHERE diagnoses IS NOT NULL
+        AND diagnoses != 'null'::jsonb
+        AND jsonb_typeof(diagnoses) = 'object'
+        AND (
+          diagnoses->'chosen' IS NULL
+          OR jsonb_array_length(COALESCE(diagnoses->'chosen', '[]'::jsonb)) = 0
+        )
+        AND diagnoses->'provisional'->>'name' IS NOT NULL
+        AND TRIM(diagnoses->'provisional'->>'name') != ''
+        AND LOWER(TRIM(diagnoses->'provisional'->>'name')) NOT IN (
+          'insufficient data for diagnosis',
+          'no diagnosis matched — further evaluation needed',
+          'no diagnosis matched - further evaluation needed'
+        )
+    `);
+    let updated = 0;
+    for (const row of rows) {
+      const dx = row.diagnoses;
+      const provName = dx.provisional?.name;
+      if (!provName) continue;
+      const merged = { ...dx, chosen: [provName] };
+      await db.query(
+        `UPDATE encounters SET diagnoses = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(merged), row.id]
+      );
+      updated++;
+    }
+    res.json({ ok: true, scanned: rows.length, updated });
+  } catch (e) { next(e); }
+});
+
+router.get('/epidemiology/overview', async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        (SELECT COUNT(*) FROM encounters WHERE diagnoses IS NOT NULL AND diagnoses != 'null'::jsonb) AS encounters_with_dx,
+        (SELECT COUNT(*) FROM encounters WHERE created_at >= NOW() - INTERVAL '30 days') AS encounters_30d,
+        (SELECT COUNT(*) FROM encounters WHERE created_at >= NOW() - INTERVAL '7 days')  AS encounters_7d,
+        (SELECT COUNT(*) FROM patients) AS total_patients,
+        (SELECT COUNT(DISTINCT patient_id) FROM encounters
+          WHERE created_at >= NOW() - INTERVAL '30 days') AS active_patients_30d,
+        (SELECT COUNT(*) FROM encounters WHERE case_category = 'emergency') AS emergency_total,
+        (SELECT COUNT(*) FROM encounters WHERE case_category = 'emergency'
+          AND created_at >= NOW() - INTERVAL '30 days') AS emergency_30d
+    `);
+    res.json({ ok: true, overview: rows[0] });
+  } catch (e) { next(e); }
+});
+
+module.exports = router;
