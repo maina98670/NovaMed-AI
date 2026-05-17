@@ -478,8 +478,8 @@ router.post('/:id/close', requireOwnEncounter, async (req, res) => {
   // If the doctor never explicitly chose, fall back to provisional name.
   const encData = await getEncounterFull(req.params.id);
   if (encData) {
-    const dx      = encData.encounter.diagnoses || {};
-    const chosen  = dx.chosen || [];
+    const dx       = encData.encounter.diagnoses || {};
+    const chosen   = dx.chosen || [];
     const provName = dx.provisional?.name || dx.provisional?.diagnosis;
     const hasValidChosen = chosen.filter(c =>
       c && c.trim() &&
@@ -511,4 +511,9 @@ router.post('/:id/close', requireOwnEncounter, async (req, res) => {
   );
   if (rows[0]) {
     await logActivity({
-      patient_id: rows[0].patie
+      patient_id: rows[0].patient_id, encounter_id: rows[0].id, user_id: req.user.sub,
+      action: 'encounter.closed', detail: 'Encounter closed and marked completed.',
+    });
+  }
+  res.json({ ok: true });
+});
