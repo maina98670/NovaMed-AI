@@ -474,6 +474,33 @@ router.post('/:id/treatment/save', async (req, res) => {
 // CLOSE / PDF
 // =====================================================================
 router.post('/:id/close', requireOwnEncounter, async (req, res) => {
+  // Before closing, ensure diagnoses.chosen is populated for epi counting.
+  // If the doctor never explicitly chose, fall back to provisional name.
+  const encData = await getEncounterFull(req.params.id);
+  if (encData) {
+    const dx      = encData.encounter.diagnoses || {};
+    const chosen  = dx.chosen || [];
+    const provName = dx.provisional?.name || dx.provisional?.diagnosis;
+    const hasValidChosen = chosen.filter(c =>
+      c && c.trim() &&
+      !['insufficient data for diagnosis','no diagnosis matched'].some(bad =>
+        c.toLowerCase().includes(bad)
+      )
+    ).length > 0;
+
+    if (!hasValidChosen && provName &&
+      !['insufficient data for diagnosis','no diagnosis matched'].some(bad =>
+        provName.toLowerCase().includes(bad)
+      )
+    ) {
+      const merged = { ...dx, chosen: [provName] };
+      await db.query(
+        `UPDATE encounters SET diagnoses = $1::jsonb WHERE id = $2`,
+        [JSON.stringify(merged), req.params.id]
+      );
+    }
+  }
+
   const { rows } = await db.query(
     `UPDATE encounters
      SET status = 'closed',
@@ -484,99 +511,4 @@ router.post('/:id/close', requireOwnEncounter, async (req, res) => {
   );
   if (rows[0]) {
     await logActivity({
-      patient_id: rows[0].patient_id, encounter_id: rows[0].id, user_id: req.user.sub,
-      action: 'encounter.closed', detail: 'Encounter closed and marked completed.',
-    });
-  }
-  res.json({ ok: true });
-});
-
-router.get('/:id/pdf', async (req, res) => {
-  const data = await getEncounterFull(req.params.id);
-  if (!data) return res.status(404).json({ ok: false, error: 'Not found' });
-  let doctorName = '—';
-  if (data.encounter.doctor_id) {
-    const r = await db.query('SELECT full_name FROM users WHERE id = $1', [data.encounter.doctor_id]);
-    doctorName = r.rows[0]?.full_name || '—';
-  }
-  // Load facility config for header
-  const { rows: facRows } = await db.query('SELECT * FROM facility_config LIMIT 1');
-  const facility = facRows[0] || {};
-  // Load claim if it exists (for SHA tariff page)
-  const { rows: claimRows } = await db.query(
-    'SELECT * FROM claims WHERE encounter_id = $1 LIMIT 1',
-    [req.params.id]
-  );
-  if (claimRows[0]) data.encounter.claim = claimRows[0];
-
-  buildEncounterPdf(res, {
-    patient:   data.patient,
-    encounter: data.encounter,
-    uploads:   data.uploads,
-    doctorName,
-    facility,
-  });
-});
-
-// =====================================================================
-// AI REPORTS (per-phase + final summary)
-// =====================================================================
-
-// POST /api/encounters/:id/report/:phase
-//   phase ∈ { history | examination | diagnosis | investigations | treatment }
-// Generates a detailed markdown medical report for that phase.
-router.post('/:id/report/:phase', async (req, res) => {
-  try {
-    const validPhases = ['history','examination','diagnosis','investigations','treatment'];
-    const phase = (req.params.phase || '').toLowerCase();
-    if (!validPhases.includes(phase)) {
-      return res.status(400).json({ ok: false, error: 'Invalid phase' });
-    }
-    const data = await getEncounterFull(req.params.id);
-    if (!data) return res.status(404).json({ ok: false, error: 'Not found' });
-
-    let doctorName = '—';
-    if (data.encounter.doctor_id) {
-      const r = await db.query('SELECT full_name FROM users WHERE id = $1', [data.encounter.doctor_id]);
-      doctorName = r.rows[0]?.full_name || '—';
-    }
-
-    const report = await ai.generatePhaseReport({
-      phase,
-      patient: data.patient,
-      encounter: data.encounter,
-      doctorName,
-    });
-
-    res.json({ ok: true, phase, report });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// POST /api/encounters/:id/summary
-// Generates a full professional discharge-style summary.
-router.post('/:id/summary', async (req, res) => {
-  try {
-    const data = await getEncounterFull(req.params.id);
-    if (!data) return res.status(404).json({ ok: false, error: 'Not found' });
-
-    let doctorName = '—';
-    if (data.encounter.doctor_id) {
-      const r = await db.query('SELECT full_name FROM users WHERE id = $1', [data.encounter.doctor_id]);
-      doctorName = r.rows[0]?.full_name || '—';
-    }
-
-    const report = await ai.generateFinalSummary({
-      patient: data.patient,
-      encounter: data.encounter,
-      doctorName,
-    });
-
-    res.json({ ok: true, report });
-  } catch (e) {
-    next(e);
-  }
-});
-
-module.exports = router;
+      patient_id: rows[0].patie
