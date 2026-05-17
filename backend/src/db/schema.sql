@@ -8,6 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ─────────────────────────────────────────────────────────
 -- USERS  (clinicians: doctor / nurse / clinician / admin)
 -- ─────────────────────────────────────────────────────────
+DROP TABLE IF EXISTS users CASCADE;
 CREATE TABLE IF NOT EXISTS users (
     id              SERIAL PRIMARY KEY,
     full_name       VARCHAR(150) NOT NULL,
